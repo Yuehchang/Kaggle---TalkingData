@@ -24,7 +24,7 @@ def create_time(df):
 def comb_click(df, features=[]):
     for i in features:
         if 'click_{}'.format(i) in df.columns:
-            print('You had already created the new feaure click_{}'.format(i))
+            print('You had already created the new feaure click_{}.'.format(i))
         
         else:        
             df['click'] = 1
@@ -32,14 +32,13 @@ def comb_click(df, features=[]):
             tmp.reset_index(inplace=True)
             tmp = tmp.rename(columns={'click': 'click_{}'.format(i)})
             df = pd.merge(df, tmp, on=['{}'.format(i), 'hour', 'day'])
-            
-            print('New features click_{} had been created'.format(i))
+            print('New features click_{} had been created.'.format(i))
             
     return df
 
 ##drop features which are unnecessary for model
-def drop_features(df, feature=[]):
-    return df.drop(feature, axis=1)
+def drop_features(df, features=[]):
+    return df.drop(features, axis=1)
 
 
 #Model: xgboost
@@ -55,26 +54,30 @@ dtypes = {
         }
 
 start_time = time.time()
-
 df_train = pd.read_csv(path+'train.csv', skiprows=range(1,122903891), 
                        nrows=62000000, usecols=['ip', 'app', 'device', 'os', 'channel', 'click_time', 'is_attributed'],
                        dtype=dtypes)
 df_test = pd.read_csv(path+'test.csv', usecols=['ip', 'app', 'device', 'os', 'channel', 'click_time', 'click_id'],
                       dtype=dtypes)
-
-print('It takes {:.2f} second.'.format(time.time()-start_time))
+print('It takes {:.2f} seconds for importing two dataset.'.format(time.time()-start_time))
 
 ##create time feature
+start_time = time.time()
 df_train = create_time(df_train)
 df_test = create_time(df_test)
+print('It takes {:.2f} seconds for convert string to datetime.'.format(time.time()-start_time))
 
 #create combination freature
+start_time = time.time()
 df_train = comb_click(df_train, features=['ip'])
 df_test = comb_click(df_test, features=['ip'])
+print('It takes {:.2f} seconds for creating new features.'.format(time.time()-start_time))
 
-
-df_train = drop_features(df_train)
-df_test = drop_features(df_test)
+##drop features to save spaces
+start_time = time.time()
+df_train = drop_features(df_train, features=['ip', 'click_time', 'day', 'click'])
+df_test = drop_features(df_test, features=['ip', 'click_time', 'day', 'click'])
+print('It takes {:.2f} seconds for dropping features.'.format(time.time()-start_time))
 
 ##Training and test in df_train
 y = df_train['is_attributed']
@@ -92,6 +95,7 @@ submit = pd.DataFrame()
 submit['click_id'] = df_test['click_id'].values
 df_test = df_test.drop(['click_id'], axis=1)
 
+print('Start to run the model...')
 ##Model
 params = {'silent': True,                   #It’s generally good to keep it 0 as the messages might help in understanding the model.
           'nthread': 8,                     #Core for using
@@ -115,15 +119,17 @@ watchlist = [(xgb.DMatrix(X_train, y_train), 'train'), (xgb.DMatrix(X_test, y_te
 
 start_time = time.time()
 bst = xgb.train(params, xgb.DMatrix(X_train, y_train), 50, watchlist, early_stopping_rounds = 20, verbose_eval=1)
-print('[{:.2f} second]: Training time for Histogram Optimized XGBoost model'.format(time.time() - start_time))
+print('[{:.2f} seconds]: Training time for Histogram Optimized XGBoost model.'.format(time.time() - start_time))
 del X_train, X_test, y_train, y_test
 
-
+print('Start the prediction...')
 submit['is_attributed'] = bst.predict(xgb.DMatrix(df_test), ntree_limit=bst.best_ntree_limit)
 submit = submit.sort_values(by='click_id')
+print('finish the prediction...')
+
+print('Save the prediction to csv')
 submit.to_csv(path+'xgboost3.csv', index=False)
 
 ##Model evaluation
-
-plot_importance(bst)
-plt.gcf().savefig(path+'xgb_fi.png')
+#plot_importance(bst)
+#plt.gcf().savefig(path+'xgb_fi.png')
