@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Fri Mar 23 14:25:39 2018
+Created on Sat Mar 24 21:07:52 2018
 
 @author: changyueh
 """
@@ -10,9 +10,6 @@ import pandas as pd
 import xgboost as xgb
 from functions import create_time, comb_click_time, comb_click_feature, drop_features
 
-
-#Model: xgboost
-##import train and test 
 dtypes = {
         'ip'            : 'uint32',
         'app'           : 'uint16',
@@ -71,7 +68,8 @@ submit = pd.DataFrame()
 submit['click_id'] = df_test['click_id'].values
 df_test = df_test.drop(['click_id'], axis=1)
 
-print('Start to run the model...')
+print('Start to tuning the model...')
+
 ##Model
 params = {'silent': True,                   #It’s generally good to keep it 0 as the messages might help in understanding the model.
           'nthread': 8,                     #Core for using
@@ -89,26 +87,37 @@ params = {'silent': True,                   #It’s generally good to keep it 0 
           'tree_method': "hist",            #Fast histogram optimized approximate greedy algorithm. 
           'grow_policy': "lossguide",       #split at nodes with highest loss change
           'random_state': 1}
-          
-          
-watchlist = [(xgb.DMatrix(X_train, y_train), 'train'), (xgb.DMatrix(X_test, y_test), 'valid')]
 
-start_time = time.time()
-bst = xgb.train(params, xgb.DMatrix(X_train, y_train), 50, watchlist, early_stopping_rounds = 20, verbose_eval=1)
-print('[{:.2f} seconds]: Training time for Histogram Optimized XGBoost model.'.format(time.time() - start_time))
-del X_train, X_test, y_train, y_test
+max_auc = float("Inf")
+best_params = None
+num_boost_round = 999
 
-print('Start the prediction...')
-submit['is_attributed'] = bst.predict(xgb.DMatrix(df_test), ntree_limit=bst.best_ntree_limit)
-submit = submit.sort_values(by='click_id')
-del df_test
-print('finish the prediction...')
+dtrain = xgb.DMatrix(X_train, y_train)
+dtest = xgb.DMatrix(X_test, y_test)
 
-print('Save the prediction to csv')
-submit.to_csv('submit_xgboost.csv', index=False)
-del submit
-print('All tasks are completed...')
+for eta in [.3, .2, .1, .05, .01, .005]:    
+    print("CV with eta={}".format(eta))
 
-##Model evaluation
-#plot_importance(bst)
-#plt.gcf().savefig(path+'xgb_fi.png')
+    # We update our parameters
+    params['eta'] = eta
+
+    # Run and time CV
+    cv_results = xgb.cv(
+            params,
+            dtrain,
+            num_boost_round=num_boost_round,
+            seed=42,
+            nfold=5,
+            metrics=['auc'],
+            early_stopping_rounds=20
+          )
+
+    # Update best score
+    mean_auc = cv_results['test-auc-mean'].max()
+    boost_rounds = cv_results['test-mae-mean'].argmax()
+    print("\tMAE {} for {} rounds\n".format(mean_auc, boost_rounds))
+    if mean_auc < max_auc:
+        max_auc = mean_auc
+        best_params = eta
+
+print("Best params: {}, MAE: {}".format(best_params, max_auc))
