@@ -67,7 +67,7 @@ def comb_click_feature(df, features=[], groups=[]):
 def drop_features(df, features=[]):
     return df.drop(features, axis=1)
 
-###Top 10 clicking in each feature
+##Top 10 clicking in each feature
 def top_10c(df, feature='ip'):
     return df[['click_{}_hour'.format(feature), feature]].groupby(feature).sum().sort_values('click_{}_hour'.format(feature), ascending=False).head(10)
 
