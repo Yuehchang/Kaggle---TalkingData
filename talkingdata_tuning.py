@@ -24,32 +24,26 @@ start_time = time.time()
 df_train = pd.read_csv('train.csv', skiprows=range(1,122903891), 
                        nrows=62000000, usecols=['ip', 'app', 'device', 'os', 'channel', 'click_time', 'is_attributed'],
                        dtype=dtypes)
-df_test = pd.read_csv('test.csv', usecols=['ip', 'app', 'device', 'os', 'channel', 'click_time', 'click_id'],
-                      dtype=dtypes)
 print('It takes {:.2f} seconds for importing two dataset.'.format(time.time()-start_time))
 
 ##create time feature
 start_time = time.time()
 df_train = create_time(df_train)
-df_test = create_time(df_test)
 print('It takes {:.2f} seconds for converting string to datetime.'.format(time.time()-start_time))
 
 #create combination freature
 start_time = time.time()
 df_train = comb_click_time(df_train, features=['ip'], groups=['hour', 'day'])
-df_test = comb_click_time(df_test, features=['ip'], groups=['hour', 'day'])
 print('It takes {:.2f} seconds for creating new features by time.'.format(time.time()-start_time))
 
 start_time = time.time()
 df_train = comb_click_feature(df_train, features=['ip'], groups=['app'])
-df_test = comb_click_feature(df_test, features=['ip'], groups=['app'])
 print('It takes {:.2f} seconds for creating new features by dif features.'.format(time.time()-start_time))
 
 
 ##drop features to save spaces
 start_time = time.time()
 df_train = drop_features(df_train, features=['ip', 'click_time', 'day', 'click'])
-df_test = drop_features(df_test, features=['ip', 'click_time', 'day', 'click'])
 print('It takes {:.2f} seconds for dropping features.'.format(time.time()-start_time))
 
 ##Training and test in df_train
@@ -63,14 +57,9 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_
 del X
 del y
 
-##Test
-submit = pd.DataFrame()
-submit['click_id'] = df_test['click_id'].values
-df_test = df_test.drop(['click_id'], axis=1)
-
 print('Start to tuning the model...')
 
-##Model
+##Model's params
 params = {'silent': True,                   #It’s generally good to keep it 0 as the messages might help in understanding the model.
           'nthread': 8,                     #Core for using
           'eta': 0.3,                       #Analogous to learning rate in GBM
@@ -93,7 +82,6 @@ best_params = None
 num_boost_round = 999
 
 dtrain = xgb.DMatrix(X_train, y_train)
-dtest = xgb.DMatrix(X_test, y_test)
 
 for eta in [.3, .2, .1, .05, .01, .005]:    
     print("CV with eta={}".format(eta))
@@ -114,10 +102,10 @@ for eta in [.3, .2, .1, .05, .01, .005]:
 
     # Update best score
     mean_auc = cv_results['test-auc-mean'].max()
-    boost_rounds = cv_results['test-mae-mean'].argmax()
-    print("\tMAE {} for {} rounds\n".format(mean_auc, boost_rounds))
+    boost_rounds = cv_results['test-auc-mean'].argmax()
+    print("\tAUC {} for {} rounds\n".format(mean_auc, boost_rounds))
     if mean_auc < max_auc:
         max_auc = mean_auc
         best_params = eta
 
-print("Best params: {}, MAE: {}".format(best_params, max_auc))
+print("Best params: {}, AUC: {}".format(best_params, max_auc))
